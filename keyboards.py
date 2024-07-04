@@ -3,11 +3,13 @@ from aiogram.types import (ReplyKeyboardMarkup,
                            InlineKeyboardMarkup,
                            InlineKeyboardButton)
 
-inline_keyboard_start = InlineKeyboardMarkup(row_width=1)
-menubutton = InlineKeyboardButton(text='Меню', callback_data='/Меню')
-inline_keyboard_start.add(menubutton)
+inline_keyboard_start = InlineKeyboardMarkup(row_width=1,
+                                             resize_keyboard=True)
+button_menu = InlineKeyboardButton(text="Меню", callback_data="Menu")
+inline_keyboard_start.add(button_menu)
 
-keyboard_menu = ReplyKeyboardMarkup(resize_keyboard=True)
-button_add_request = KeyboardButton('Оставить заявку на вынос елки')
-button_send_info = KeyboardButton('Информация об исполнителе')
-keyboard_menu.add(button_add_request).add(button_send_info)
+inline_keyboard_menu = InlineKeyboardMarkup(row_width=1,
+                                            resize_keyboard=True)
+button_recommend_minor = InlineKeyboardButton(text="Порекомендуйте мне майнор!", callback_data="AwaitingMessage")
+button_send_minors = InlineKeyboardButton(text="Полезные ссылки", callback_data="UsefulLinks")
+inline_keyboard_menu.add(button_recommend_minor, button_send_minors)
