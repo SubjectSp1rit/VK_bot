@@ -5,6 +5,7 @@ import aiofiles
 import datetime
 
 
+# Действие при включении бота
 async def on_startup(_):
     async with aiofiles.open(file="log.txt",
                              mode="a",
@@ -12,6 +13,7 @@ async def on_startup(_):
         await f.write(f"[SYSTEM] | {str(datetime.datetime.now())[:-7]} | Бот запущен успешно\n")
 
 
+# Действие при выключении бота
 async def on_shutdown(_):
     async with aiofiles.open(file="log.txt",
                              mode="a",

@@ -1,33 +1,70 @@
 from aiogram import (types,
                      Dispatcher)
 from initialisation import (bot,
-                        dispatcher as dp)
+                            llm)
 from keyboards import (inline_keyboard_start,
-                      inline_keyboard_menu)
-from aiogram.types import CallbackQuery
+                       inline_keyboard_menu)
+from aiogram.types import ParseMode
 from aiogram.dispatcher.filters.state import (State,
                                               StatesGroup)
 from aiogram.dispatcher import FSMContext
 import aiofiles
 import datetime
+import asyncio
 
 
 class FSM(StatesGroup):
     user_message = State()
 
 
-async def user_message(message: types.Message, state: FSMContext):
-    user_answer = message.text
-    await state.update_data(user_message=user_answer)
-    await bot.send_message(chat_id=message.from_user.id,
-                           text="ТУТ ТИПА ОТВЕТ ОТ НЕЙРОНКИ :)",
-                           reply_markup=inline_keyboard_start)
-    await state.finish()
+# Записать 1 событие в лог
+async def make_log(log_type, username, msg):
     async with aiofiles.open(file="log.txt",
                              mode="a",
                              encoding="utf-8") as f:
         await f.write(
-            f"[CLIENT] | {str(datetime.datetime.now())[:-7]} | {message.from_user.username} получил ответ от нейросети\n")
+            f"[{log_type}] | {str(datetime.datetime.now())[:-7]} | {username} {msg}\n")
+
+
+# Создание промпта на основе данных из файла и сообщения пользователя
+async def make_prompt(user_msg):
+    async with aiofiles.open(file="minors-headers.txt",
+                             mode="r",
+                             encoding="utf-8") as f:
+        lines = await f.read()
+    prompt = f'Студент написал следующее сообщение: \"{user_msg}\", далее приведен список доступных курсов: {lines}На основании интересов студента, перечисленных в его сообщении, подбери 5 наиболее подходящих курсов из списка. ПИШИ НА РУССКОМ ЯЗЫКЕ. Напиши майноры в виде 1. НАЗВАНИЕ, 2. НАЗВАНИЕ и т.д. после каждого названия через дефис опиши почему ты выбрал именно этот майнор, НО НЕ ПИШИ БОЛЬШЕ НИЧЕГО КРОМЕ ЭТОГО. НЕ ПИШИ ВСТУПЛЕНИЕ И ЗАКЛЮЧЕНИЕ.'
+    return prompt
+
+
+# Обёрточная асинхронная функция для не асинхронной функции
+async def get_response_from_ollama(prompt, username):
+    try:
+        await make_log("CLIENT", username, "отправил запрос")
+        response = await asyncio.to_thread(llm.complete, prompt)
+        await make_log("CLIENT", username, "получил ответ")
+        return response
+    except Exception:
+        await make_log("CLIENT", username, "произошла ошибка при обработке запроса")
+
+
+async def user_message(message: types.Message, state: FSMContext):
+    processing_message = await bot.send_message(chat_id=message.from_user.id,
+                                                text="Отлично! Мы уже обрабатываем ваш запрос и совсем скоро вернемся с ответом :)")
+    user_answer = message.text
+    await state.update_data(user_message=user_answer)
+    await state.finish()
+
+    prompt = await make_prompt(message.text)
+
+    response = await get_response_from_ollama(prompt, message.from_user.username)
+
+    await bot.delete_message(chat_id=processing_message.chat.id,
+                             message_id=processing_message.message_id)
+    await bot.send_message(chat_id=message.from_user.id,
+                           text=response,
+                           parse_mode=ParseMode.MARKDOWN,
+                           reply_markup=inline_keyboard_start)
+
 
 async def start(message: types.Message):
     await bot.send_sticker(chat_id=message.from_user.id,
@@ -44,13 +81,10 @@ async def start(message: types.Message):
         await bot.send_message(chat_id=message.from_user.id,
                                text=f"Приветствую, {message.from_user.last_name}!",
                                reply_markup=inline_keyboard_start)
-    async with aiofiles.open(file="log.txt",
-                             mode="a",
-                             encoding="utf-8") as f:
-        await f.write(f"[CLIENT] | {str(datetime.datetime.now())[:-7]} | {message.from_user.username} запустил бота\n")
+    await make_log("CLIENT", message.from_user.username, "запустил бота")
 
 
-async def menu(callback_query: types.CallbackQuery):
+async def callback(callback_query: types.CallbackQuery):
     if callback_query.data == "Menu":
         await bot.edit_message_text(chat_id=callback_query.message.chat.id,
                                     message_id=callback_query.message.message_id,
@@ -59,12 +93,8 @@ async def menu(callback_query: types.CallbackQuery):
     elif callback_query.data == "AwaitingMessage":
         await bot.edit_message_text(chat_id=callback_query.message.chat.id,
                                     message_id=callback_query.message.message_id,
-                                    text="Отправьте сообщение в произвольной форме, содержащее информацию о майноре(-ах), которые вам бы понравились:",
+                                    text="Отправьте сообщение в произвольной форме, содержащее информацию о том, что вам интересно и что вы ожидаете от майнора, а мы подберем майноры специально для вас:",
                                     reply_markup=None)
-        async with aiofiles.open(file="log.txt",
-                                 mode="a",
-                                 encoding="utf-8") as f:
-            await f.write(f"[CLIENT] | {str(datetime.datetime.now())[:-7]} | {callback_query.from_user.username} запустил нейросеть\n")
         await FSM.user_message.set()
     elif callback_query.data == "UsefulLinks":
         await bot.edit_message_text(chat_id=callback_query.message.chat.id,
@@ -86,5 +116,5 @@ async def menu(callback_query: types.CallbackQuery):
 
 def client_handlers(dp: Dispatcher):
     dp.register_message_handler(start, commands=["start"])
-    dp.register_callback_query_handler(callback=menu)
+    dp.register_callback_query_handler(callback=callback)
     dp.register_message_handler(user_message, state=FSM.user_message)
